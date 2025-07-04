@@ -39,7 +39,8 @@ export default function AddTaskPage() {
     deadline: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isEnhancing, setIsEnhancing] = useState(false); // New state for AI enhancement loading
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [isEnhancing, setIsEnhancing] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,11 +83,7 @@ export default function AddTaskPage() {
         taskData.category = formData.category;
       }
 
-      console.log("Submitting task data:", taskData);
-
-      const response = await createTask(taskData);
-
-      console.log("Task created successfully:", response);
+      await createTask(taskData);
 
       toast.success("Task created successfully!");
       router.push("/tasks");
@@ -102,7 +99,7 @@ export default function AddTaskPage() {
     }
   };
 
-  const handleAISuggestion = async () => {
+  const handleAIDescriptionEnhance = async () => {
     if (!formData.title) {
       toast.error("Please enter a title before enhancing the description.");
       return;
@@ -112,9 +109,7 @@ export default function AddTaskPage() {
     try {
       const response = await fetch("/api/enhance", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: formData.title,
           description: formData.description,
@@ -123,7 +118,7 @@ export default function AddTaskPage() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to get AI enhancement.");
+        throw new Error(errorData.error || "Failed to enhance description.");
       }
 
       const data = await response.json();
@@ -135,7 +130,7 @@ export default function AddTaskPage() {
         }));
         toast.success("Description enhanced by AI!");
       } else {
-        throw new Error("Invalid response format from AI.");
+        throw new Error("Invalid response from AI.");
       }
     } catch (error) {
       console.error("AI Enhancement Error:", error);
@@ -149,8 +144,51 @@ export default function AddTaskPage() {
     }
   };
 
-  const applyAISuggestion = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+  const handleAISuggestion = async () => {
+    if (!formData.title || !formData.description) {
+      toast.error(
+        "Please enter a title and description before getting AI suggestions."
+      );
+      return;
+    }
+
+    setIsSuggesting(true);
+    try {
+      const response = await fetch("/api/suggest-task-details", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to get AI suggestions.");
+      }
+
+      const data = await response.json();
+
+      setFormData((prev) => ({
+        ...prev,
+        category: data.category || prev.category,
+        priority: data.priority || prev.priority,
+        deadline: data.deadline || prev.deadline,
+      }));
+      toast.success("AI suggestions applied!");
+    } catch (error) {
+      console.error("AI Suggestion Error:", error);
+      if (error instanceof Error) {
+        toast.error(`AI Suggestion Failed: ${error.message}`);
+      } else {
+        toast.error("An unknown error occurred during AI suggestion.");
+      }
+    } finally {
+      setIsSuggesting(false);
+    }
   };
 
   return (
@@ -202,26 +240,59 @@ export default function AddTaskPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="description">Description *</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleAISuggestion}
-                      disabled={!formData.title || isSubmitting || isEnhancing}
-                      className="text-purple-600 border-purple-200 hover:bg-purple-50 dark:hover:bg-purple-900/20 bg-transparent"
-                    >
-                      {isEnhancing ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600 mr-2" />
-                          Enhancing...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="h-4 w-4 mr-2" />
-                          AI Enhance
-                        </>
-                      )}
-                    </Button>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAIDescriptionEnhance}
+                        disabled={
+                          !formData.title ||
+                          isSubmitting ||
+                          isEnhancing ||
+                          isSuggesting
+                        }
+                        className="text-blue-600 border-blue-200 hover:bg-blue-50 dark:hover:bg-blue-900/20 bg-transparent"
+                      >
+                        {isEnhancing ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2" />
+                            Enhancing...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 mr-2" />
+                            AI Enhance
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAISuggestion}
+                        disabled={
+                          !formData.title ||
+                          !formData.description ||
+                          isSubmitting ||
+                          isSuggesting ||
+                          isEnhancing
+                        }
+                        className="text-purple-600 border-purple-200 hover:bg-purple-50 dark:hover:bg-purple-900/20 bg-transparent"
+                      >
+                        {isSuggesting ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600 mr-2" />
+                            Suggesting...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 mr-2" />
+                            AI Suggest
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                   <Textarea
                     id="description"
@@ -386,12 +457,12 @@ export default function AddTaskPage() {
 
               <div className="text-sm text-slate-600 dark:text-slate-400">
                 <h4 className="font-medium text-slate-900 dark:text-white mb-2">
-                  AI Enhancement:
+                  Using AI Features:
                 </h4>
                 <p>
-                  Use the AI Enhance button to get smart suggestions for better
-                  task descriptions, appropriate deadlines, and optimal
-                  categorization.
+                  Use <strong>AI Enhance</strong> to improve your description.
+                  Use <strong>AI Suggest</strong> to get smart suggestions for
+                  the category, priority, and deadline.
                 </p>
               </div>
             </CardContent>

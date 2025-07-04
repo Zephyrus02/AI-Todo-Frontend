@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, Edit, Trash2, Tag } from "lucide-react";
+import { Calendar, Edit, Trash2, Tag, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -10,6 +10,10 @@ interface TaskCardProps {
   task: Task;
   onEdit: (taskId: string) => void;
   onDelete: (taskId: string) => void;
+  onStatusChange: (
+    taskId: string,
+    newStatus: "Pending" | "In Progress" | "Completed"
+  ) => void;
 }
 
 const priorityColors = {
@@ -27,7 +31,12 @@ const statusColors = {
     "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
 };
 
-export default function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
+export default function TaskCard({
+  task,
+  onEdit,
+  onDelete,
+  onStatusChange,
+}: TaskCardProps) {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
       month: "short",
@@ -39,61 +48,86 @@ export default function TaskCard({ task, onEdit, onDelete }: TaskCardProps) {
   const isOverdue =
     new Date(task.deadline) < new Date() && task.status !== "Completed";
 
+  const getNextStatus = (): "In Progress" | "Completed" | null => {
+    if (task.status === "Pending") return "In Progress";
+    if (task.status === "In Progress") return "Completed";
+    return null; // No next status if completed
+  };
+
+  const nextStatus = getNextStatus();
+
   return (
-    <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-all duration-300 group">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex-1">
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-            {task.title}
-          </h3>
-          <p className="text-slate-600 dark:text-slate-400 text-sm line-clamp-2">
-            {task.description}
-          </p>
+    <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-2xl p-6 border border-slate-200 dark:border-slate-700 hover:shadow-xl transition-all duration-300 group flex flex-col justify-between">
+      <div>
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+              {task.title}
+            </h3>
+            <p className="text-slate-600 dark:text-slate-400 text-sm line-clamp-2">
+              {task.description}
+            </p>
+          </div>
+          <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onEdit(task.id)}
+              className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onDelete(task.id)}
+              className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-        <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onEdit(task.id)}
-            className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+
+        <div className="flex flex-wrap gap-2 mb-4">
+          <Badge
+            className={cn(
+              "text-xs font-medium",
+              priorityColors[task.priority_label]
+            )}
           >
-            <Edit className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onDelete(task.id)}
-            className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+            {task.priority_label}
+          </Badge>
+          <Badge
+            className={cn("text-xs font-medium", statusColors[task.status])}
           >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+            {task.status}
+          </Badge>
+          <Badge variant="outline" className="text-xs">
+            <Tag className="h-3 w-3 mr-1" />
+            {task.category_name || "No Category"}
+          </Badge>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-4">
-        <Badge
-          className={cn(
-            "text-xs font-medium",
-            priorityColors[task.priority_label]
-          )}
-        >
-          {task.priority_label}
-        </Badge>
-        <Badge className={cn("text-xs font-medium", statusColors[task.status])}>
-          {task.status}
-        </Badge>
-        <Badge variant="outline" className="text-xs">
-          <Tag className="h-3 w-3 mr-1" />
-          {task.category_name || "No Category"}
-        </Badge>
-      </div>
-
-      <div className="flex items-center text-sm text-slate-500 dark:text-slate-400">
-        <Calendar className="h-4 w-4 mr-2" />
-        <span className={cn(isOverdue && "text-red-500 font-medium")}>
-          {formatDate(task.deadline)}
-          {isOverdue && " (Overdue)"}
-        </span>
+      <div className="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400 mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+        <div className="flex items-center">
+          <Calendar className="h-4 w-4 mr-2" />
+          <span className={cn(isOverdue && "text-red-500 font-medium")}>
+            {formatDate(task.deadline)}
+            {isOverdue && " (Overdue)"}
+          </span>
+        </div>
+        {nextStatus && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onStatusChange(task.id, nextStatus)}
+            className="bg-transparent hover:bg-slate-100 dark:hover:bg-slate-700"
+          >
+            {nextStatus === "In Progress" ? "Start Task" : "Complete Task"}
+            <ArrowRight className="h-4 w-4 ml-2" />
+          </Button>
+        )}
       </div>
     </div>
   );

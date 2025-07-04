@@ -33,6 +33,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           data: { session },
         } = await supabase.auth.getSession();
         setUser(session?.user ?? null);
+        if (session?.user) {
+          localStorage.setItem("user_id", session.user.id);
+        } else {
+          localStorage.removeItem("user_id");
+        }
       } catch (error) {
         console.error("Error getting session:", error);
       } finally {
@@ -46,6 +51,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user ?? null);
+      if (session?.user) {
+        localStorage.setItem("user_id", session.user.id);
+      } else {
+        localStorage.removeItem("user_id");
+      }
       setLoading(false);
       router.refresh();
     });
@@ -71,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem("user_id");
     router.push("/login");
   };
 

@@ -22,7 +22,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import TaskCard from "./task-card";
-import { fetchTasks, deleteTask, Task, TasksResponse } from "@/lib/api";
+import {
+  fetchTasks,
+  deleteTask,
+  updateTaskStatus,
+  Task,
+  TasksResponse,
+} from "@/lib/api";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
 
@@ -73,6 +79,27 @@ export default function TasksPage() {
       toast.error("Failed to refresh tasks");
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const handleStatusUpdate = async (
+    taskId: string,
+    newStatus: "Pending" | "In Progress" | "Completed"
+  ) => {
+    try {
+      // Await the API call to ensure the backend is updated first.
+      await updateTaskStatus(taskId, newStatus);
+
+      // Update the local state by creating a new object with the updated status.
+      setTasks(
+        tasks.map((task) =>
+          task.id === taskId ? { ...task, status: newStatus } : task
+        )
+      );
+      toast.success(`Task status updated to "${newStatus}"`);
+    } catch (error) {
+      console.error("Error updating task status:", error);
+      toast.error("Failed to update task status");
     }
   };
 
@@ -338,6 +365,7 @@ export default function TasksPage() {
                   task={task}
                   onEdit={handleEditTask}
                   onDelete={handleDeleteTask}
+                  onStatusChange={handleStatusUpdate}
                 />
               ))}
             </div>
