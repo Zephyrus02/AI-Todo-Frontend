@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Search,
   Calendar,
@@ -34,6 +35,7 @@ import { toast } from "sonner";
 
 export default function TasksPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -121,9 +123,7 @@ export default function TasksPage() {
   };
 
   const handleEditTask = (taskId: string) => {
-    console.log("Edit task:", taskId);
-    // TODO: Implement edit functionality
-    toast.info("Edit functionality coming soon!");
+    router.push(`/add-task/${taskId}`);
   };
 
   const filteredTasks = tasks.filter((task) => {

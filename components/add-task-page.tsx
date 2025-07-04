@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -24,11 +24,23 @@ import {
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { createTask, type CreateTaskRequest } from "@/lib/api";
+import {
+  createTask,
+  updateTask,
+  fetchTasks,
+  type CreateTaskRequest,
+  type UpdateTaskRequest,
+  type Task,
+} from "@/lib/api";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/auth-context";
 
-export default function AddTaskPage() {
+const formatDateForInput = (isoDate: string | null | undefined) => {
+  if (!isoDate) return "";
+  return isoDate.split("T")[0];
+};
+
+export default function AddTaskPage({ taskId }: { taskId?: string }) {
   const router = useRouter();
   const { user } = useAuth();
   const [formData, setFormData] = useState({
@@ -41,59 +53,92 @@ export default function AddTaskPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [isEnhancing, setIsEnhancing] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(!!taskId);
+
+  const isEditMode = !!taskId;
+
+  useEffect(() => {
+    if (isEditMode && user) {
+      const getTask = async () => {
+        try {
+          const response = await fetchTasks();
+          const taskToEdit = response.results.find(
+            (t: Task) => t.id === taskId
+          );
+
+          if (taskToEdit) {
+            setFormData({
+              title: taskToEdit.title,
+              description: taskToEdit.description,
+              category: taskToEdit.category_name || "",
+              priority: taskToEdit.priority_label,
+              deadline: formatDateForInput(taskToEdit.deadline),
+            });
+          } else {
+            toast.error("Task not found.");
+            router.push("/tasks");
+          }
+        } catch (error) {
+          console.error("Failed to fetch task:", error);
+          toast.error("Failed to load task data.");
+        } finally {
+          setIsLoadingData(false);
+        }
+      };
+      getTask();
+    }
+  }, [isEditMode, taskId, user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (
-      !formData.title.trim() ||
-      !formData.description.trim() ||
-      !formData.deadline
-    ) {
-      toast.error("Please fill in all required fields");
+    if (!formData.title.trim() || !formData.deadline) {
+      toast.error("Please fill in Title and Deadline fields.");
       return;
     }
 
     if (!user) {
-      toast.error("You must be logged in to create tasks");
+      toast.error("You must be logged in to manage tasks.");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      // Convert deadline to ISO format with timezone
       const deadlineDate = new Date(formData.deadline + "T18:00:00");
       const deadlineISO = deadlineDate.toISOString();
 
-      const taskData: CreateTaskRequest = {
-        title: formData.title.trim(),
-        description: formData.description.trim(),
-        priority_label: formData.priority,
-        deadline: deadlineISO,
-        status: "Pending",
-      };
-
-      // Only include category if it's provided and not the "none" value
-      if (
-        formData.category &&
-        formData.category.trim() &&
-        formData.category !== "none"
-      ) {
-        taskData.category = formData.category;
+      if (isEditMode) {
+        const taskData: UpdateTaskRequest = {
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          priority_label: formData.priority,
+          deadline: deadlineISO,
+        };
+        if (formData.category && formData.category !== "none") {
+          taskData.category = formData.category;
+        }
+        await updateTask(taskId, taskData);
+        toast.success("Task updated successfully!");
+      } else {
+        const taskData: CreateTaskRequest = {
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          priority_label: formData.priority,
+          deadline: deadlineISO,
+          status: "Pending",
+        };
+        if (formData.category && formData.category !== "none") {
+          taskData.category = formData.category;
+        }
+        await createTask(taskData);
+        toast.success("Task created successfully!");
       }
-
-      await createTask(taskData);
-
-      toast.success("Task created successfully!");
       router.push("/tasks");
     } catch (error) {
-      console.error("Error creating task:", error);
-      if (error instanceof Error) {
-        toast.error(error.message);
-      } else {
-        toast.error("Failed to create task. Please try again.");
-      }
+      console.error("Error submitting task:", error);
+      const action = isEditMode ? "update" : "create";
+      toast.error(`Failed to ${action} task. Please try again.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -191,6 +236,14 @@ export default function AddTaskPage() {
     }
   };
 
+  if (isLoadingData) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -200,10 +253,12 @@ export default function AddTaskPage() {
         </Button>
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-            Create New Task
+            {isEditMode ? "Edit Task" : "Create New Task"}
           </h1>
           <p className="text-slate-600 dark:text-slate-400">
-            Add a new task to your todo list
+            {isEditMode
+              ? "Update the details of your existing task."
+              : "Add a new task to your todo list"}
           </p>
         </div>
       </div>
@@ -418,12 +473,12 @@ export default function AddTaskPage() {
                     {isSubmitting ? (
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                        Creating...
+                        Saving...
                       </>
                     ) : (
                       <>
                         <Save className="h-4 w-4 mr-2" />
-                        Create Task
+                        {isEditMode ? "Save Changes" : "Create Task"}
                       </>
                     )}
                   </Button>

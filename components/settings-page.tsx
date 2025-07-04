@@ -1,41 +1,23 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import {
-  User,
-  Bell,
-  Palette,
-  Shield,
-  Database,
-  Download,
-  Trash2,
-  Moon,
-  Sun,
-  Info,
-} from "lucide-react";
-import { useTheme } from "next-themes";
+import { useSearchParams } from "next/navigation";
+import { User, Bell, Link as LinkIcon } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
-  const { theme, setTheme } = useTheme();
-  const { user, updateProfile } = useAuth();
+  const { user, updateProfile, signInWithGoogle } = useAuth();
+  const searchParams = useSearchParams();
 
+  const [activeTab, setActiveTab] = useState("profile");
   const [profile, setProfile] = useState({
     name: "",
     email: "",
@@ -43,6 +25,30 @@ export default function SettingsPage() {
   });
 
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (user) {
+      setProfile({
+        name: getFullName(user),
+        email: user.email || "",
+        avatar: getAvatarUrl(user),
+      });
+
+      // Check if the user has a Google provider token
+      const isConnected =
+        user.app_metadata.provider === "google" &&
+        user.app_metadata.providers?.includes("google");
+      setIsGoogleConnected(!!isConnected);
+    }
+  }, [user]);
 
   // Helper function to get avatar URL from user data
   const getAvatarUrl = (user: any) => {
@@ -84,15 +90,6 @@ export default function SettingsPage() {
     deadlineAlerts: true,
   });
 
-  const [preferences, setPreferences] = useState({
-    defaultView: "dashboard",
-    tasksPerPage: "12",
-    dateFormat: "MM/DD/YYYY",
-    timeFormat: "12h",
-    autoSave: true,
-    compactMode: false,
-  });
-
   const handleProfileUpdate = (field: string, value: string) => {
     setProfile((prev) => ({ ...prev, [field]: value }));
   };
@@ -126,10 +123,7 @@ export default function SettingsPage() {
       ...prev,
       [setting]: !prev[setting as keyof typeof prev],
     }));
-  };
-
-  const handlePreferenceChange = (setting: string, value: string | boolean) => {
-    setPreferences((prev) => ({ ...prev, [setting]: value }));
+    toast.info("Notification settings are saved automatically.");
   };
 
   const getInitials = (name: string) => {
@@ -138,6 +132,13 @@ export default function SettingsPage() {
       .map((n) => n[0])
       .join("")
       .toUpperCase();
+  };
+
+  const handleConnectGoogle = async () => {
+    const { error } = await signInWithGoogle();
+    if (error) {
+      toast.error(`Failed to connect Google Account: ${error.message}`);
+    }
   };
 
   return (
@@ -152,13 +153,15 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-6"
+      >
+        <TabsList className="grid w-full grid-cols-3 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
-          <TabsTrigger value="preferences">Preferences</TabsTrigger>
-          <TabsTrigger value="data">Data</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
         </TabsList>
 
         {/* Profile Settings */}
@@ -239,163 +242,6 @@ export default function SettingsPage() {
                     {isUpdating ? "Saving..." : "Save Changes"}
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* User Account Info */}
-            <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Info className="h-5 w-5 text-green-500" />
-                  <span>Account Information</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-slate-500">Account Created:</span>
-                    <p className="font-medium">
-                      {user?.created_at
-                        ? new Date(user.created_at).toLocaleDateString()
-                        : "Not available"}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Last Sign In:</span>
-                    <p className="font-medium">
-                      {user?.last_sign_in_at
-                        ? new Date(user.last_sign_in_at).toLocaleDateString()
-                        : "Not available"}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">User ID:</span>
-                    <p className="font-mono text-xs break-all">{user?.id}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-500">Email Verified:</span>
-                    <Badge
-                      variant={
-                        user?.email_confirmed_at ? "default" : "secondary"
-                      }
-                    >
-                      {user?.email_confirmed_at ? "Verified" : "Not Verified"}
-                    </Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Raw User Metadata */}
-            <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Database className="h-5 w-5 text-purple-500" />
-                  <span>Raw User Metadata</span>
-                </CardTitle>
-                <p className="text-sm text-slate-500">
-                  All data stored in raw_user_meta_data field
-                </p>
-              </CardHeader>
-              <CardContent>
-                {(user as any)?.raw_user_meta_data ? (
-                  <div className="space-y-4">
-                    {Object.entries((user as any).raw_user_meta_data).map(
-                      ([key, value]) => (
-                        <div key={key} className="flex flex-col space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                              {key}:
-                            </span>
-                            <Badge variant="outline" className="text-xs">
-                              {typeof value}
-                            </Badge>
-                          </div>
-                          <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-3">
-                            {key === "avatar_url" &&
-                            typeof value === "string" ? (
-                              <div className="flex items-center space-x-3">
-                                <Avatar className="h-8 w-8">
-                                  <AvatarImage
-                                    src={value}
-                                    alt="Avatar preview"
-                                  />
-                                  <AvatarFallback>IMG</AvatarFallback>
-                                </Avatar>
-                                <code className="text-xs break-all">
-                                  {value}
-                                </code>
-                              </div>
-                            ) : (
-                              <code className="text-xs break-all">
-                                {typeof value === "object"
-                                  ? JSON.stringify(value, null, 2)
-                                  : String(value)}
-                              </code>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-slate-500">
-                    No metadata available
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* User Metadata (for comparison) */}
-            <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Database className="h-5 w-5 text-orange-500" />
-                  <span>User Metadata</span>
-                </CardTitle>
-                <p className="text-sm text-slate-500">
-                  All data stored in user_metadata field
-                </p>
-              </CardHeader>
-              <CardContent>
-                {user?.user_metadata &&
-                Object.keys(user.user_metadata).length > 0 ? (
-                  <div className="space-y-4">
-                    {Object.entries(user.user_metadata).map(([key, value]) => (
-                      <div key={key} className="flex flex-col space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                            {key}:
-                          </span>
-                          <Badge variant="outline" className="text-xs">
-                            {typeof value}
-                          </Badge>
-                        </div>
-                        <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-3">
-                          {key === "avatar_url" && typeof value === "string" ? (
-                            <div className="flex items-center space-x-3">
-                              <Avatar className="h-8 w-8">
-                                <AvatarImage src={value} alt="Avatar preview" />
-                                <AvatarFallback>IMG</AvatarFallback>
-                              </Avatar>
-                              <code className="text-xs break-all">{value}</code>
-                            </div>
-                          ) : (
-                            <code className="text-xs break-all">
-                              {typeof value === "object"
-                                ? JSON.stringify(value, null, 2)
-                                : String(value)}
-                            </code>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-slate-500">
-                    No metadata available
-                  </div>
-                )}
               </CardContent>
             </Card>
           </div>
@@ -491,245 +337,37 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
-        {/* Appearance Settings */}
-        <TabsContent value="appearance">
+        {/* Integrations Settings */}
+        <TabsContent value="integrations">
           <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
-                <Palette className="h-5 w-5 text-purple-500" />
-                <span>Appearance</span>
+                <LinkIcon className="h-5 w-5 text-green-500" />
+                <span>App Integrations</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-base font-medium">Theme</Label>
-                  <p className="text-sm text-slate-500 mb-3">
-                    Choose your preferred theme
-                  </p>
-                  <div className="grid grid-cols-3 gap-4">
-                    <Button
-                      variant={theme === "light" ? "default" : "outline"}
-                      onClick={() => setTheme("light")}
-                      className="flex flex-col items-center p-4 h-auto"
-                    >
-                      <Sun className="h-6 w-6 mb-2" />
-                      Light
-                    </Button>
-                    <Button
-                      variant={theme === "dark" ? "default" : "outline"}
-                      onClick={() => setTheme("dark")}
-                      className="flex flex-col items-center p-4 h-auto"
-                    >
-                      <Moon className="h-6 w-6 mb-2" />
-                      Dark
-                    </Button>
-                    <Button
-                      variant={theme === "system" ? "default" : "outline"}
-                      onClick={() => setTheme("system")}
-                      className="flex flex-col items-center p-4 h-auto"
-                    >
-                      <div className="h-6 w-6 mb-2 rounded-full bg-gradient-to-r from-slate-400 to-slate-600" />
-                      System
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium">Compact Mode</h4>
-                    <p className="text-sm text-slate-500">
-                      Reduce spacing for more content
-                    </p>
-                  </div>
-                  <Switch
-                    checked={preferences.compactMode}
-                    onCheckedChange={(checked) =>
-                      handlePreferenceChange("compactMode", checked)
-                    }
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Preferences */}
-        <TabsContent value="preferences">
-          <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Shield className="h-5 w-5 text-green-500" />
-                <span>Application Preferences</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label>Default View</Label>
-                  <Select
-                    value={preferences.defaultView}
-                    onValueChange={(value) =>
-                      handlePreferenceChange("defaultView", value)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="dashboard">Dashboard</SelectItem>
-                      <SelectItem value="tasks">All Tasks</SelectItem>
-                      <SelectItem value="calendar">Calendar</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Tasks Per Page</Label>
-                  <Select
-                    value={preferences.tasksPerPage}
-                    onValueChange={(value) =>
-                      handlePreferenceChange("tasksPerPage", value)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="6">6 tasks</SelectItem>
-                      <SelectItem value="12">12 tasks</SelectItem>
-                      <SelectItem value="24">24 tasks</SelectItem>
-                      <SelectItem value="48">48 tasks</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Date Format</Label>
-                  <Select
-                    value={preferences.dateFormat}
-                    onValueChange={(value) =>
-                      handlePreferenceChange("dateFormat", value)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
-                      <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
-                      <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Time Format</Label>
-                  <Select
-                    value={preferences.timeFormat}
-                    onValueChange={(value) =>
-                      handlePreferenceChange("timeFormat", value)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="12h">12 Hour</SelectItem>
-                      <SelectItem value="24h">24 Hour</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="font-medium">Auto Save</h4>
+                  <h4 className="font-medium">Google Calendar</h4>
                   <p className="text-sm text-slate-500">
-                    Automatically save changes as you type
+                    {isGoogleConnected
+                      ? "Your account is connected. Tasks will be synced automatically."
+                      : "Connect your Google account to sync tasks to your calendar."}
                   </p>
                 </div>
-                <Switch
-                  checked={preferences.autoSave}
-                  onCheckedChange={(checked) =>
-                    handlePreferenceChange("autoSave", checked)
-                  }
-                />
+                {isGoogleConnected ? (
+                  <Button variant="outline" disabled>
+                    Connected
+                  </Button>
+                ) : (
+                  <Button onClick={handleConnectGoogle}>
+                    Connect Google Account
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        {/* Data Management */}
-        <TabsContent value="data">
-          <div className="space-y-6">
-            <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Database className="h-5 w-5 text-blue-500" />
-                  <span>Data Management</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-slate-200 dark:border-slate-700 rounded-lg">
-                  <div>
-                    <h4 className="font-medium">Export Data</h4>
-                    <p className="text-sm text-slate-500">
-                      Download all your tasks and data
-                    </p>
-                  </div>
-                  <Button variant="outline">
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
-                  </Button>
-                </div>
-
-                <div className="flex items-center justify-between p-4 border border-slate-200 dark:border-slate-700 rounded-lg">
-                  <div>
-                    <h4 className="font-medium">Storage Usage</h4>
-                    <p className="text-sm text-slate-500">
-                      You're using 2.3 MB of storage
-                    </p>
-                  </div>
-                  <Badge variant="secondary">2.3 MB / 100 MB</Badge>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2 text-red-700 dark:text-red-400">
-                  <Trash2 className="h-5 w-5" />
-                  <span>Danger Zone</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-red-200 dark:border-red-800 rounded-lg">
-                  <div>
-                    <h4 className="font-medium text-red-700 dark:text-red-400">
-                      Delete All Tasks
-                    </h4>
-                    <p className="text-sm text-red-600 dark:text-red-500">
-                      Permanently delete all your tasks
-                    </p>
-                  </div>
-                  <Button variant="destructive">Delete All Tasks</Button>
-                </div>
-
-                <div className="flex items-center justify-between p-4 border border-red-200 dark:border-red-800 rounded-lg">
-                  <div>
-                    <h4 className="font-medium text-red-700 dark:text-red-400">
-                      Delete Account
-                    </h4>
-                    <p className="text-sm text-red-600 dark:text-red-500">
-                      Permanently delete your account and all data
-                    </p>
-                  </div>
-                  <Button variant="destructive">Delete Account</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
         </TabsContent>
       </Tabs>
     </div>

@@ -38,6 +38,11 @@ export interface CreateContextRequest {
   };
 }
 
+export interface UpdateContextRequest {
+  content?: string;
+  source_type?: string;
+}
+
 export interface SuggestedTask {
   title: string;
   deadline: string;
@@ -81,6 +86,15 @@ export interface Task {
   updated_at: string;
 }
 
+export interface UpdateTaskRequest {
+  title?: string;
+  description?: string;
+  category?: string;
+  priority_label?: "Low" | "Medium" | "High";
+  deadline?: string;
+  status?: "Pending" | "In Progress" | "Completed";
+}
+
 export interface TasksResponse {
   count: number;
   next: string | null;
@@ -112,6 +126,65 @@ export const createContextEntry = async (contextData: CreateContextRequest) => {
     console.error("API Error:", errorText);
     throw new Error(
       `Failed to create context entry: ${response.status} ${response.statusText}`
+    );
+  }
+
+  return await response.json();
+};
+
+export const deleteContextEntry = async (contextId: string) => {
+  const supabase = createClientComponentClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error("No authentication token found");
+  }
+
+  const response = await fetch(`${api.endpoints.contextEntries}${contextId}/`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+    },
+  });
+
+  if (response.status !== 204) {
+    const errorText = await response.text();
+    console.error("API Error:", errorText);
+    throw new Error(
+      `Failed to delete context entry: ${response.status} ${response.statusText}`
+    );
+  }
+};
+
+export const updateContextEntry = async (
+  contextId: string,
+  contextData: UpdateContextRequest
+) => {
+  const supabase = createClientComponentClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error("No authentication token found");
+  }
+
+  const response = await fetch(`${api.endpoints.contextEntries}${contextId}/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(contextData),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("API Error:", errorText);
+    throw new Error(
+      `Failed to update context entry: ${response.status} ${response.statusText}`
     );
   }
 
@@ -210,9 +283,60 @@ export const createTask = async (taskData: CreateTaskRequest) => {
     );
   }
 
-  const result = await response.json();
-  console.log("API Response:", result);
-  return result;
+  const createdTask = await response.json();
+
+  // --- NEW: Sync with Google Calendar ---
+  try {
+    // We don't need to await this; it can run in the background.
+    fetch("/api/google-calendar/create-event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: createdTask.title,
+        description: createdTask.description,
+        deadline: createdTask.deadline,
+      }),
+    });
+  } catch (e) {
+    // Log the error, but don't block the UI from showing success for the task creation itself.
+    console.error("Could not sync task to Google Calendar:", e);
+  }
+  // --- END NEW ---
+
+  return createdTask;
+};
+
+export const updateTask = async (
+  taskId: string,
+  taskData: UpdateTaskRequest
+): Promise<Task> => {
+  const supabase = createClientComponentClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error("No authentication token found");
+  }
+
+  const response = await fetch(`${api.endpoints.tasks}${taskId}/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify(taskData),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("API Error:", errorText);
+    throw new Error(
+      `Failed to update task: ${response.status} ${response.statusText}`
+    );
+  }
+
+  return await response.json();
 };
 
 export const fetchTasks = async (): Promise<TasksResponse> => {

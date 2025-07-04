@@ -14,6 +14,8 @@ import {
   ChevronDown,
   ChevronUp,
   PlusCircle,
+  Edit,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,8 +33,11 @@ import {
   createContextEntry,
   fetchContextEntries,
   processContextsForTaskCreation,
+  deleteContextEntry,
+  updateContextEntry,
   type ContextEntry,
   type CreateContextRequest,
+  type UpdateContextRequest,
 } from "@/lib/api";
 import { useAuth } from "@/contexts/auth-context";
 import { Badge } from "@/components/ui/badge";
@@ -46,7 +51,15 @@ const priorityColors = {
   High: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
 };
 
-function ContextCard({ entry }: { entry: ContextEntry }) {
+function ContextCard({
+  entry,
+  onEdit,
+  onDelete,
+}: {
+  entry: ContextEntry;
+  onEdit: (entry: ContextEntry) => void;
+  onDelete: (entryId: string) => void;
+}) {
   const [isInsightsOpen, setIsInsightsOpen] = useState(false);
 
   const formatTimestamp = (timestamp: string) => {
@@ -60,7 +73,7 @@ function ContextCard({ entry }: { entry: ContextEntry }) {
   };
 
   return (
-    <Card className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm border-slate-200 dark:border-slate-700 hover:shadow-md transition-shadow">
+    <Card className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm border-slate-200 dark:border-slate-700 hover:shadow-md transition-shadow group">
       <CardHeader className="pb-4">
         <div className="flex items-start justify-between">
           <div>
@@ -73,20 +86,41 @@ function ContextCard({ entry }: { entry: ContextEntry }) {
               {formatTimestamp(entry.created_at)}
             </CardDescription>
           </div>
-          {entry.insights && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsInsightsOpen(!isInsightsOpen)}
-            >
-              {isInsightsOpen ? "Hide" : "Show"} Insights
-              {isInsightsOpen ? (
-                <ChevronUp className="h-4 w-4 ml-2" />
-              ) : (
-                <ChevronDown className="h-4 w-4 ml-2" />
-              )}
-            </Button>
-          )}
+          <div className="flex items-center">
+            <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onEdit(entry)}
+                className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onDelete(entry.id)}
+                className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+            {entry.insights && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsInsightsOpen(!isInsightsOpen)}
+                className="ml-2"
+              >
+                {isInsightsOpen ? "Hide" : "Show"} Insights
+                {isInsightsOpen ? (
+                  <ChevronUp className="h-4 w-4 ml-2" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 ml-2" />
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -158,6 +192,11 @@ export default function ContextInput() {
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isProcessingTasks, setIsProcessingTasks] = useState(false);
 
+  // State for editing context
+  const [editingContext, setEditingContext] = useState<ContextEntry | null>(
+    null
+  );
+
   // State for manual insights
   const [showInsightsForm, setShowInsightsForm] = useState(false);
   const [summary, setSummary] = useState("");
@@ -184,6 +223,29 @@ export default function ContextInput() {
     };
     loadContexts();
   }, [user]);
+
+  const handleEditClick = (context: ContextEntry) => {
+    setEditingContext(context);
+    // For simplicity, this example reuses the main form.
+    // A modal would be a better UX for a real application.
+    setContextText(context.content);
+    setSourceText(context.source_type);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleDeleteContext = async (contextId: string) => {
+    if (!confirm("Are you sure you want to delete this context entry?")) {
+      return;
+    }
+    try {
+      await deleteContextEntry(contextId);
+      setContexts((prev) => prev.filter((c) => c.id !== contextId));
+      toast.success("Context entry deleted.");
+    } catch (error) {
+      console.error("Failed to delete context:", error);
+      toast.error("Failed to delete context entry.");
+    }
+  };
 
   const handleAIContextEnhance = async () => {
     if (!contextText.trim()) {
@@ -244,6 +306,12 @@ export default function ContextInput() {
     }
   };
 
+  const handleCancelEdit = () => {
+    setEditingContext(null);
+    setContextText("");
+    setSourceText("");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!contextText.trim()) {
@@ -251,41 +319,62 @@ export default function ContextInput() {
       return;
     }
     setIsSubmitting(true);
-    try {
-      const contextData: CreateContextRequest = {
-        content: contextText,
-        source_type: sourceText.trim() || "Note",
-      };
 
-      if (showInsightsForm) {
-        const suggestedTask: {
-          title: string;
-          priority: "Low" | "Medium" | "High";
-          deadline?: string;
-        } = {
-          title: suggestedTaskTitle.trim(),
-          priority: suggestedTaskPriority,
+    try {
+      if (editingContext) {
+        // Update existing context
+        const contextData: UpdateContextRequest = {
+          content: contextText,
+          source_type: sourceText.trim() || "Note",
+        };
+        const updatedEntry = await updateContextEntry(
+          editingContext.id,
+          contextData
+        );
+        setContexts((prev) =>
+          prev.map((c) => (c.id === editingContext.id ? updatedEntry : c))
+        );
+        toast.success("Context updated successfully!");
+        setEditingContext(null);
+      } else {
+        // Create new context
+        const contextData: CreateContextRequest = {
+          content: contextText,
+          source_type: sourceText.trim() || "Note",
         };
 
-        if (suggestedTaskDeadline) {
-          const deadlineDate = new Date(suggestedTaskDeadline + "T18:00:00");
-          suggestedTask.deadline = deadlineDate.toISOString();
+        if (showInsightsForm) {
+          const suggestedTask: {
+            title: string;
+            priority: "Low" | "Medium" | "High";
+            deadline?: string;
+          } = {
+            title: suggestedTaskTitle.trim(),
+            priority: suggestedTaskPriority,
+          };
+
+          if (suggestedTaskDeadline) {
+            const deadlineDate = new Date(suggestedTaskDeadline + "T18:00:00");
+            suggestedTask.deadline = deadlineDate.toISOString();
+          }
+
+          contextData.insights = {
+            summary: summary.trim() || undefined,
+            key_entities: keyEntities
+              ? keyEntities
+                  .split(",")
+                  .map((e) => e.trim())
+                  .filter(Boolean)
+              : undefined,
+            suggested_tasks: suggestedTask.title ? [suggestedTask] : undefined,
+          };
         }
 
-        contextData.insights = {
-          summary: summary.trim() || undefined,
-          key_entities: keyEntities
-            ? keyEntities
-                .split(",")
-                .map((e) => e.trim())
-                .filter(Boolean)
-            : undefined,
-          suggested_tasks: suggestedTask.title ? [suggestedTask] : undefined,
-        };
+        const newEntry = await createContextEntry(contextData);
+        setContexts([newEntry, ...contexts]);
+        toast.success("Context submitted successfully!");
       }
 
-      const newEntry = await createContextEntry(contextData);
-      setContexts([newEntry, ...contexts]);
       // Reset form
       setContextText("");
       setSourceText("");
@@ -295,8 +384,6 @@ export default function ContextInput() {
       setSuggestedTaskPriority("Medium");
       setSuggestedTaskDeadline("");
       setShowInsightsForm(false);
-
-      toast.success("Context submitted successfully!");
     } catch (error) {
       console.error("Failed to submit context:", error);
       toast.error("Failed to submit context. Please try again.");
@@ -323,7 +410,7 @@ export default function ContextInput() {
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <MessageSquare className="h-5 w-5 text-blue-500" />
-            <span>Add New Context</span>
+            <span>{editingContext ? "Edit Context" : "Add New Context"}</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -373,91 +460,103 @@ export default function ContextInput() {
               />
             </div>
 
-            {/* Manual Insights Section */}
-            <div className="space-y-4 pt-2">
-              <Button
-                type="button"
-                variant="link"
-                className="p-0 h-auto"
-                onClick={() => setShowInsightsForm(!showInsightsForm)}
-              >
-                <PlusCircle className="h-4 w-4 mr-2" />
-                {showInsightsForm ? "Hide" : "Add Manual Insights"}
-              </Button>
+            {/* Manual Insights Section - Hidden when editing */}
+            {!editingContext && (
+              <div className="space-y-4 pt-2">
+                <Button
+                  type="button"
+                  variant="link"
+                  className="p-0 h-auto"
+                  onClick={() => setShowInsightsForm(!showInsightsForm)}
+                >
+                  <PlusCircle className="h-4 w-4 mr-2" />
+                  {showInsightsForm ? "Hide" : "Add Manual Insights"}
+                </Button>
 
-              {showInsightsForm && (
-                <div className="space-y-4 p-4 border rounded-lg bg-slate-50 dark:bg-slate-900/50">
-                  <div className="space-y-2">
-                    <Label htmlFor="summary">Summary</Label>
-                    <Textarea
-                      id="summary"
-                      value={summary}
-                      onChange={(e) => setSummary(e.target.value)}
-                      placeholder="A brief summary of the context..."
-                      rows={2}
-                      disabled={isSubmitting}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="key-entities">Key Entities</Label>
-                    <Input
-                      id="key-entities"
-                      value={keyEntities}
-                      onChange={(e) => setKeyEntities(e.target.value)}
-                      placeholder="e.g., Project Alpha, Q3 Report, Globex Corp"
-                      disabled={isSubmitting}
-                    />
-                    <p className="text-xs text-slate-500">
-                      Enter values separated by commas.
-                    </p>
-                  </div>
-                  <div className="space-y-3">
-                    <Label>Suggested Task</Label>
-                    <Input
-                      value={suggestedTaskTitle}
-                      onChange={(e) => setSuggestedTaskTitle(e.target.value)}
-                      placeholder="Title for a suggested task..."
-                      disabled={isSubmitting}
-                    />
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <RadioGroup
-                        value={suggestedTaskPriority}
-                        onValueChange={(value: "Low" | "Medium" | "High") =>
-                          setSuggestedTaskPriority(value)
-                        }
-                        className="flex space-x-4"
+                {showInsightsForm && (
+                  <div className="space-y-4 p-4 border rounded-lg bg-slate-50 dark:bg-slate-900/50">
+                    <div className="space-y-2">
+                      <Label htmlFor="summary">Summary</Label>
+                      <Textarea
+                        id="summary"
+                        value={summary}
+                        onChange={(e) => setSummary(e.target.value)}
+                        placeholder="A brief summary of the context..."
+                        rows={2}
                         disabled={isSubmitting}
-                      >
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="Low" id="low" />
-                          <Label htmlFor="low">Low</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="Medium" id="medium" />
-                          <Label htmlFor="medium">Medium</Label>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <RadioGroupItem value="High" id="high" />
-                          <Label htmlFor="high">High</Label>
-                        </div>
-                      </RadioGroup>
-                      <Input
-                        type="date"
-                        value={suggestedTaskDeadline}
-                        onChange={(e) =>
-                          setSuggestedTaskDeadline(e.target.value)
-                        }
-                        disabled={isSubmitting}
-                        className="h-10"
-                        min={new Date().toISOString().split("T")[0]}
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="key-entities">Key Entities</Label>
+                      <Input
+                        id="key-entities"
+                        value={keyEntities}
+                        onChange={(e) => setKeyEntities(e.target.value)}
+                        placeholder="e.g., Project Alpha, Q3 Report, Globex Corp"
+                        disabled={isSubmitting}
+                      />
+                      <p className="text-xs text-slate-500">
+                        Enter values separated by commas.
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      <Label>Suggested Task</Label>
+                      <Input
+                        value={suggestedTaskTitle}
+                        onChange={(e) => setSuggestedTaskTitle(e.target.value)}
+                        placeholder="Title for a suggested task..."
+                        disabled={isSubmitting}
+                      />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <RadioGroup
+                          value={suggestedTaskPriority}
+                          onValueChange={(value: "Low" | "Medium" | "High") =>
+                            setSuggestedTaskPriority(value)
+                          }
+                          className="flex space-x-4"
+                          disabled={isSubmitting}
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="Low" id="low" />
+                            <Label htmlFor="low">Low</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="Medium" id="medium" />
+                            <Label htmlFor="medium">Medium</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="High" id="high" />
+                            <Label htmlFor="high">High</Label>
+                          </div>
+                        </RadioGroup>
+                        <Input
+                          type="date"
+                          value={suggestedTaskDeadline}
+                          onChange={(e) =>
+                            setSuggestedTaskDeadline(e.target.value)
+                          }
+                          disabled={isSubmitting}
+                          className="h-10"
+                          min={new Date().toISOString().split("T")[0]}
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
-            <div className="flex justify-end">
+            <div className="flex justify-end space-x-2">
+              {editingContext && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCancelEdit}
+                  disabled={isSubmitting}
+                >
+                  Cancel Edit
+                </Button>
+              )}
               <Button
                 type="submit"
                 disabled={
@@ -473,7 +572,7 @@ export default function ContextInput() {
                 ) : (
                   <>
                     <Send className="h-4 w-4 mr-2" />
-                    Submit Context
+                    {editingContext ? "Update Context" : "Submit Context"}
                   </>
                 )}
               </Button>
@@ -519,7 +618,12 @@ export default function ContextInput() {
         ) : contexts.length > 0 ? (
           <div className="space-y-4">
             {contexts.map((entry) => (
-              <ContextCard key={entry.id} entry={entry} />
+              <ContextCard
+                key={entry.id}
+                entry={entry}
+                onEdit={handleEditClick}
+                onDelete={handleDeleteContext}
+              />
             ))}
           </div>
         ) : (
