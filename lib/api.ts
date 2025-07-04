@@ -1,28 +1,102 @@
+import axios from "axios";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
+// Create an axios instance with default configuration
+const apiClient = axios.create({
+  baseURL: BASE_URL,
+  timeout: 30000, // 30 second timeout
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+// Add request interceptor to include auth token
+apiClient.interceptors.request.use(
+  async (config) => {
+    const supabase = createClientComponentClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (session?.access_token) {
+      config.headers.Authorization = `Bearer ${session.access_token}`;
+    }
+
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for better error handling
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error("API Error Details:", {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+      },
+    });
+    return Promise.reject(error);
+  }
+);
+
 export const api = {
   baseUrl: BASE_URL,
   endpoints: {
-    tasks: `${BASE_URL}api/tasks/`,
-    categories: `${BASE_URL}api/categories/`,
-    contextEntries: `${BASE_URL}api/context-entries/`,
-    processContexts: `${BASE_URL}api/process-contexts/`,
+    tasks: "/api/tasks/",
+    categories: "/api/categories/",
+    contextEntries: "/api/context-entries/",
+    processContexts: "/api/process-contexts/",
   },
 };
 
 export interface CreateTaskRequest {
   title: string;
   description: string;
-  category?: string; // UUID of category
+  category?: string;
   priority_label?: "Low" | "Medium" | "High";
-  deadline?: string; // ISO datetime
+  deadline?: string;
   status?: "Pending" | "In Progress" | "Completed";
 }
 
-// --- Context Entry Interfaces ---
+export interface UpdateTaskRequest {
+  title?: string;
+  description?: string;
+  category?: string;
+  priority_label?: "Low" | "Medium" | "High";
+  deadline?: string;
+  status?: "Pending" | "In Progress" | "Completed";
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  description: string;
+  category: string | null;
+  category_name: string | null;
+  priority_score: number;
+  priority_label: "Low" | "Medium" | "High";
+  deadline: string;
+  status: "Pending" | "In Progress" | "Completed";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TasksResponse {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: Task[];
+}
 
 export interface CreateContextRequest {
   content: string;
@@ -70,90 +144,33 @@ export interface ContextEntriesResponse {
   results: ContextEntry[];
 }
 
-// --- End Context Entry Interfaces ---
-
-export interface Task {
-  id: string;
-  title: string;
-  description: string;
-  category: string | null;
-  category_name: string | null;
-  priority_score: number;
-  priority_label: "Low" | "Medium" | "High";
-  deadline: string;
-  status: "Pending" | "In Progress" | "Completed";
-  created_at: string;
-  updated_at: string;
-}
-
-export interface UpdateTaskRequest {
-  title?: string;
-  description?: string;
-  category?: string;
-  priority_label?: "Low" | "Medium" | "High";
-  deadline?: string;
-  status?: "Pending" | "In Progress" | "Completed";
-}
-
-export interface TasksResponse {
-  count: number;
-  next: string | null;
-  previous: string | null;
-  results: Task[];
-}
-
+// Context API functions
 export const createContextEntry = async (contextData: CreateContextRequest) => {
-  const supabase = createClientComponentClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("No authentication token found");
-  }
-
-  const response = await fetch(api.endpoints.contextEntries, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(contextData),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("API Error:", errorText);
+  try {
+    const response = await apiClient.post(
+      api.endpoints.contextEntries,
+      contextData
+    );
+    return response.data;
+  } catch (error: any) {
     throw new Error(
-      `Failed to create context entry: ${response.status} ${response.statusText}`
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to create context entry"
     );
   }
-
-  return await response.json();
 };
 
 export const deleteContextEntry = async (contextId: string) => {
-  const supabase = createClientComponentClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("No authentication token found");
-  }
-
-  const response = await fetch(`${api.endpoints.contextEntries}${contextId}/`, {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-    },
-  });
-
-  if (response.status !== 204) {
-    const errorText = await response.text();
-    console.error("API Error:", errorText);
+  try {
+    await apiClient.delete(`${api.endpoints.contextEntries}${contextId}/`);
+  } catch (error: any) {
     throw new Error(
-      `Failed to delete context entry: ${response.status} ${response.statusText}`
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to delete context entry"
     );
   }
 };
@@ -162,280 +179,152 @@ export const updateContextEntry = async (
   contextId: string,
   contextData: UpdateContextRequest
 ) => {
-  const supabase = createClientComponentClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("No authentication token found");
-  }
-
-  const response = await fetch(`${api.endpoints.contextEntries}${contextId}/`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(contextData),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("API Error:", errorText);
+  try {
+    const response = await apiClient.patch(
+      `${api.endpoints.contextEntries}${contextId}/`,
+      contextData
+    );
+    return response.data;
+  } catch (error: any) {
     throw new Error(
-      `Failed to update context entry: ${response.status} ${response.statusText}`
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to update context entry"
     );
   }
-
-  return await response.json();
 };
 
 export const fetchContextEntries =
   async (): Promise<ContextEntriesResponse> => {
-    const supabase = createClientComponentClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session?.access_token) {
-      throw new Error("No authentication token found");
-    }
-
-    const response = await fetch(api.endpoints.contextEntries, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Fetch context entries error:", errorText);
+    try {
+      const response = await apiClient.get(api.endpoints.contextEntries);
+      return response.data;
+    } catch (error: any) {
       throw new Error(
-        `Failed to fetch context entries: ${response.status} ${response.statusText}`
+        error.response?.data?.detail ||
+          error.response?.data?.message ||
+          error.message ||
+          "Failed to fetch context entries"
       );
     }
-
-    return await response.json();
   };
 
 export const processContextsForTaskCreation = async (userId: string) => {
-  const supabase = createClientComponentClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("No authentication token found");
-  }
-
-  const response = await fetch(`${api.endpoints.processContexts}${userId}/`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("API Error:", errorText);
+  try {
+    const response = await apiClient.post(
+      `${api.endpoints.processContexts}${userId}/`
+    );
+    return response.data;
+  } catch (error: any) {
     throw new Error(
-      `Failed to process contexts: ${response.status} ${response.statusText}`
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to process contexts"
     );
   }
-
-  return await response.json();
 };
 
+// Task API functions
 export const createTask = async (taskData: CreateTaskRequest) => {
-  const supabase = createClientComponentClient();
-
-  // Get the current session for authentication
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("No authentication token found");
-  }
-
-  console.log("Creating task with data:", taskData);
-  console.log("API endpoint:", api.endpoints.tasks);
-
-  const response = await fetch(api.endpoints.tasks, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(taskData),
-  });
-
-  console.log("API Response status:", response.status);
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("API Error:", errorText);
-    throw new Error(
-      `Failed to create task: ${response.status} ${response.statusText}`
-    );
-  }
-
-  const createdTask = await response.json();
-
-  // --- NEW: Sync with Google Calendar ---
   try {
-    // We don't need to await this; it can run in the background.
-    fetch("/api/google-calendar/create-event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    console.log("Creating task with data:", taskData);
+    console.log("API endpoint:", api.endpoints.tasks);
+
+    const response = await apiClient.post(api.endpoints.tasks, taskData);
+    const createdTask = response.data;
+
+    // Sync with Google Calendar (non-blocking)
+    try {
+      await axios.post("/api/google-calendar/create-event", {
         title: createdTask.title,
         description: createdTask.description,
         deadline: createdTask.deadline,
-      }),
-    });
-  } catch (e) {
-    // Log the error, but don't block the UI from showing success for the task creation itself.
-    console.error("Could not sync task to Google Calendar:", e);
-  }
-  // --- END NEW ---
+      });
+    } catch (calendarError) {
+      console.error("Could not sync task to Google Calendar:", calendarError);
+    }
 
-  return createdTask;
+    return createdTask;
+  } catch (error: any) {
+    console.error("Create task error:", error);
+    throw new Error(
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to create task"
+    );
+  }
 };
 
 export const updateTask = async (
   taskId: string,
   taskData: UpdateTaskRequest
 ): Promise<Task> => {
-  const supabase = createClientComponentClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("No authentication token found");
-  }
-
-  const response = await fetch(`${api.endpoints.tasks}${taskId}/`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session.access_token}`,
-    },
-    body: JSON.stringify(taskData),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("API Error:", errorText);
+  try {
+    const response = await apiClient.patch(
+      `${api.endpoints.tasks}${taskId}/`,
+      taskData
+    );
+    return response.data;
+  } catch (error: any) {
     throw new Error(
-      `Failed to update task: ${response.status} ${response.statusText}`
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to update task"
     );
   }
-
-  return await response.json();
 };
 
 export const fetchTasks = async (): Promise<TasksResponse> => {
-  const supabase = createClientComponentClient();
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("No authentication token found");
-  }
-
-  console.log("Fetching tasks from:", api.endpoints.tasks);
-
-  const response = await fetch(api.endpoints.tasks, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-    },
-  });
-
-  console.log("Fetch tasks response status:", response.status);
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Fetch tasks error:", errorText);
+  try {
+    console.log("Fetching tasks from:", api.endpoints.tasks);
+    const response = await apiClient.get(api.endpoints.tasks);
+    console.log("Fetched tasks:", response.data);
+    return response.data;
+  } catch (error: any) {
+    console.error("Fetch tasks error:", error);
     throw new Error(
-      `Failed to fetch tasks: ${response.status} ${response.statusText}`
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to fetch tasks"
     );
   }
-
-  const result = await response.json();
-  console.log("Fetched tasks:", result);
-  return result;
 };
 
 export const updateTaskStatus = async (
   taskId: string,
   status: "Pending" | "In Progress" | "Completed"
 ) => {
-  const supabase = createClientComponentClient();
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("No authentication token found");
-  }
-
-  const response = await fetch(
-    `${api.endpoints.tasks}${taskId}/update_status/`,
-    {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ status }),
-    }
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Update task status error:", errorText);
+  try {
+    const response = await apiClient.patch(
+      `${api.endpoints.tasks}${taskId}/update_status/`,
+      { status }
+    );
+    return response.data;
+  } catch (error: any) {
     throw new Error(
-      `Failed to update task status: ${response.status} ${response.statusText}`
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to update task status"
     );
   }
-
-  return await response.json();
 };
 
 export const deleteTask = async (taskId: string) => {
-  const supabase = createClientComponentClient();
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    throw new Error("No authentication token found");
-  }
-
-  const response = await fetch(`${api.endpoints.tasks}${taskId}/`, {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-    },
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Delete task error:", errorText);
+  try {
+    await apiClient.delete(`${api.endpoints.tasks}${taskId}/`);
+    return true;
+  } catch (error: any) {
     throw new Error(
-      `Failed to delete task: ${response.status} ${response.statusText}`
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to delete task"
     );
   }
-
-  return true;
 };
