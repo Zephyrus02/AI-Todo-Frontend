@@ -39,12 +39,7 @@ export default function AddTaskPage() {
     deadline: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [aiSuggestions, setAiSuggestions] = useState<{
-    description?: string;
-    deadline?: string;
-    category?: string;
-    priority?: string;
-  }>({});
+  const [isEnhancing, setIsEnhancing] = useState(false); // New state for AI enhancement loading
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,36 +103,54 @@ export default function AddTaskPage() {
   };
 
   const handleAISuggestion = async () => {
-    if (!formData.title) return;
+    if (!formData.title) {
+      toast.error("Please enter a title before enhancing the description.");
+      return;
+    }
 
-    // Simulate AI API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    setIsEnhancing(true);
+    try {
+      const response = await fetch("/api/enhance", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+        }),
+      });
 
-    const suggestions = {
-      description:
-        formData.description +
-        " (AI enhanced: Consider breaking this into smaller subtasks for better productivity and tracking progress more effectively)",
-      deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split("T")[0],
-      category:
-        formData.title.toLowerCase().includes("work") ||
-        formData.title.toLowerCase().includes("project")
-          ? "Work"
-          : "Personal",
-      priority:
-        formData.title.toLowerCase().includes("urgent") ||
-        formData.title.toLowerCase().includes("important")
-          ? "High"
-          : "Medium",
-    };
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to get AI enhancement.");
+      }
 
-    setAiSuggestions(suggestions);
+      const data = await response.json();
+
+      if (data.enhanced_description) {
+        setFormData((prev) => ({
+          ...prev,
+          description: data.enhanced_description,
+        }));
+        toast.success("Description enhanced by AI!");
+      } else {
+        throw new Error("Invalid response format from AI.");
+      }
+    } catch (error) {
+      console.error("AI Enhancement Error:", error);
+      if (error instanceof Error) {
+        toast.error(`AI Enhancement Failed: ${error.message}`);
+      } else {
+        toast.error("An unknown error occurred during AI enhancement.");
+      }
+    } finally {
+      setIsEnhancing(false);
+    }
   };
 
   const applyAISuggestion = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    setAiSuggestions((prev) => ({ ...prev, [field]: undefined }));
   };
 
   return (
@@ -194,11 +207,20 @@ export default function AddTaskPage() {
                       variant="outline"
                       size="sm"
                       onClick={handleAISuggestion}
-                      disabled={!formData.title || isSubmitting}
+                      disabled={!formData.title || isSubmitting || isEnhancing}
                       className="text-purple-600 border-purple-200 hover:bg-purple-50 dark:hover:bg-purple-900/20 bg-transparent"
                     >
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      AI Enhance
+                      {isEnhancing ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600 mr-2" />
+                          Enhancing...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4 mr-2" />
+                          AI Enhance
+                        </>
+                      )}
                     </Button>
                   </div>
                   <Textarea
@@ -210,39 +232,11 @@ export default function AddTaskPage() {
                         description: e.target.value,
                       }))
                     }
-                    placeholder="Describe what needs to be done, include any important details..."
+                    placeholder="Describe what needs to be done, or use AI Enhance after entering a title."
                     rows={4}
                     required
                     disabled={isSubmitting}
                   />
-                  {aiSuggestions.description && (
-                    <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <p className="text-sm text-purple-800 dark:text-purple-200 mb-2">
-                            AI Suggestion:
-                          </p>
-                          <p className="text-sm text-slate-700 dark:text-slate-300">
-                            {aiSuggestions.description}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() =>
-                            applyAISuggestion(
-                              "description",
-                              aiSuggestions.description!
-                            )
-                          }
-                          disabled={isSubmitting}
-                          className="ml-2"
-                        >
-                          Apply
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -270,29 +264,6 @@ export default function AddTaskPage() {
                         <SelectItem value="Home">Home</SelectItem>
                       </SelectContent>
                     </Select>
-                    {aiSuggestions.category && (
-                      <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-purple-800 dark:text-purple-200">
-                            AI suggests: {aiSuggestions.category}
-                          </span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              applyAISuggestion(
-                                "category",
-                                aiSuggestions.category!
-                              )
-                            }
-                            disabled={isSubmitting}
-                          >
-                            Apply
-                          </Button>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -311,32 +282,6 @@ export default function AddTaskPage() {
                       disabled={isSubmitting}
                       min={new Date().toISOString().split("T")[0]} // Prevent past dates
                     />
-                    {aiSuggestions.deadline && (
-                      <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-purple-800 dark:text-purple-200">
-                            AI suggests:{" "}
-                            {new Date(
-                              aiSuggestions.deadline
-                            ).toLocaleDateString()}
-                          </span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              applyAISuggestion(
-                                "deadline",
-                                aiSuggestions.deadline!
-                              )
-                            }
-                            disabled={isSubmitting}
-                          >
-                            Apply
-                          </Button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -378,29 +323,6 @@ export default function AddTaskPage() {
                       </Label>
                     </div>
                   </RadioGroup>
-                  {aiSuggestions.priority && (
-                    <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-purple-800 dark:text-purple-200">
-                          AI suggests: {aiSuggestions.priority} priority
-                        </span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            applyAISuggestion(
-                              "priority",
-                              aiSuggestions.priority!
-                            )
-                          }
-                          disabled={isSubmitting}
-                        >
-                          Apply
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 <div className="flex justify-end space-x-4 pt-6">
