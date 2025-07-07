@@ -32,6 +32,7 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@/contexts/auth-context";
 import { toast } from "sonner";
+import { tasksToCSV, downloadCSV } from "@/lib/csv-utils";
 
 export default function TasksPage() {
   const { user } = useAuth();
@@ -195,17 +196,30 @@ export default function TasksPage() {
             Manage and organize all your tasks
           </p>
         </div>
-        <Button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          variant="outline"
-          className="flex items-center gap-2"
-        >
-          <RefreshCw
-            className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-          />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+          <Button
+            onClick={() => {
+              const csv = tasksToCSV(tasks);
+              downloadCSV(csv, "tasks.csv");
+            }}
+            variant="outline"
+            className="flex items-center gap-2"
+            disabled={tasks.length === 0}
+          >
+            Export as CSV
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}

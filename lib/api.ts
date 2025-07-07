@@ -301,7 +301,7 @@ export const updateTaskStatus = async (
 ) => {
   try {
     const response = await apiClient.patch(
-      `${api.endpoints.tasks}${taskId}/update_status/`,
+      `${api.endpoints.tasks}${taskId}/update_status`,
       { status }
     );
     return response.data;
@@ -325,6 +325,33 @@ export const deleteTask = async (taskId: string) => {
         error.response?.data?.message ||
         error.message ||
         "Failed to delete task"
+    );
+  }
+};
+
+// Google Calendar sync functions
+export const checkGoogleSyncStatus = async () => {
+  try {
+    const response = await apiClient.get("/api/google-calendar/status");
+    return response.data;
+  } catch (error: any) {
+    throw new Error(
+      error.response?.data?.error ||
+        error.message ||
+        "Failed to check sync status"
+    );
+  }
+};
+
+export const syncTasksToGoogleCalendar = async () => {
+  try {
+    const response = await apiClient.post("/api/google-calendar/sync-tasks");
+    return response.data;
+  } catch (error: any) {
+    throw new Error(
+      error.response?.data?.error ||
+        error.message ||
+        "Failed to sync tasks to Google Calendar"
     );
   }
 };

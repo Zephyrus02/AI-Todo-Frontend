@@ -2,7 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { User, Bell, Link as LinkIcon } from "lucide-react";
+import {
+  User,
+  Bell,
+  Link as LinkIcon,
+  Calendar,
+  RefreshCw,
+  CheckCircle,
+} from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import GoogleIcon from "@/components/ui/google-icon";
+import { fetchTasks } from "@/lib/api";
 
 export default function SettingsPage() {
   const { user, updateProfile, signInWithGoogle } = useAuth();
@@ -27,6 +35,13 @@ export default function SettingsPage() {
 
   const [isUpdating, setIsUpdating] = useState(false);
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+  const [googleSyncStatus, setGoogleSyncStatus] = useState({
+    connected: false,
+    canSync: false,
+    message: "",
+  });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingTasksCount, setPendingTasksCount] = useState(0);
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -43,13 +58,84 @@ export default function SettingsPage() {
         avatar: getAvatarUrl(user),
       });
 
-      // Check if the user has a Google provider token
-      const isConnected =
-        user.app_metadata.provider === "google" &&
-        user.app_metadata.providers?.includes("google");
-      setIsGoogleConnected(!!isConnected);
+      // Check Google Calendar sync status via API
+      checkGoogleSyncStatus();
+
+      // Get pending tasks count
+      getPendingTasksCount();
     }
   }, [user]);
+
+  const checkGoogleSyncStatus = async () => {
+    try {
+      console.log("Checking Google sync status...");
+      const response = await fetch("/api/google-calendar/status");
+      const status = await response.json();
+      console.log("Google sync status response:", status);
+      setGoogleSyncStatus(status);
+    } catch (error) {
+      console.error("Failed to check Google sync status:", error);
+      setGoogleSyncStatus({
+        connected: false,
+        canSync: false,
+        message: "Failed to check status",
+      });
+    }
+  };
+
+  const getPendingTasksCount = async () => {
+    try {
+      const response = await fetchTasks();
+      const pending = response.results.filter(
+        (task) => task.status === "Pending" || task.status === "In Progress"
+      );
+      setPendingTasksCount(pending.length);
+    } catch (error) {
+      console.error("Failed to get pending tasks count:", error);
+    }
+  };
+
+  const handleSyncTasks = async () => {
+    if (!googleSyncStatus.canSync) {
+      toast.error(
+        "Google Calendar sync is not available. Please reconnect your account."
+      );
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      console.log("Starting task sync...");
+      const response = await fetch("/api/google-calendar/sync-tasks", {
+        method: "POST",
+      });
+
+      const result = await response.json();
+      console.log("Sync result:", result);
+
+      if (response.ok) {
+        toast.success(result.message);
+        if (result.results.errors.length > 0) {
+          console.warn("Sync errors:", result.results.errors);
+          // Show detailed errors in a more user-friendly way
+          result.results.errors.forEach((error: string) => {
+            toast.error(error, { duration: 5000 });
+          });
+        }
+      } else {
+        throw new Error(result.error || "Failed to sync tasks");
+      }
+    } catch (error) {
+      console.error("Sync failed:", error);
+      toast.error(
+        `Sync failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Helper function to get avatar URL from user data
   const getAvatarUrl = (user: any) => {
@@ -340,36 +426,102 @@ export default function SettingsPage() {
 
         {/* Integrations Settings */}
         <TabsContent value="integrations">
-          <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <LinkIcon className="h-5 w-5 text-green-500" />
-                <span>App Integrations</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-medium">Google Calendar</h4>
-                  <p className="text-sm text-slate-500">
-                    {isGoogleConnected
-                      ? "Your account is connected. Tasks will be synced automatically."
-                      : "Connect your Google account to sync tasks to your calendar."}
-                  </p>
+          <div className="space-y-6">
+            <Card className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <LinkIcon className="h-5 w-5 text-green-500" />
+                  <span>App Integrations</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <Calendar className="h-5 w-5 text-blue-500" />
+                      <h4 className="font-medium">Google Calendar</h4>
+                      {googleSyncStatus.connected && (
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-500 mb-3">
+                      {googleSyncStatus.connected
+                        ? googleSyncStatus.canSync
+                          ? "Your account is connected. Sync your pending tasks to Google Calendar."
+                          : googleSyncStatus.message
+                        : "Connect your Google account to sync tasks to your calendar."}
+                    </p>
+
+                    {googleSyncStatus.connected &&
+                      googleSyncStatus.canSync &&
+                      pendingTasksCount > 0 && (
+                        <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                          <p className="text-sm text-blue-700 dark:text-blue-300">
+                            📅 You have <strong>{pendingTasksCount}</strong>{" "}
+                            pending tasks that can be synced to your Google
+                            Calendar.
+                          </p>
+                        </div>
+                      )}
+                  </div>
+
+                  <div className="flex flex-col space-y-2">
+                    {googleSyncStatus.connected ? (
+                      googleSyncStatus.canSync ? (
+                        <Button
+                          onClick={handleSyncTasks}
+                          disabled={isSyncing || pendingTasksCount === 0}
+                          className="bg-blue-500 hover:bg-blue-600 text-white"
+                        >
+                          {isSyncing ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                              Syncing...
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="h-4 w-4 mr-2" />
+                              Sync Tasks ({pendingTasksCount})
+                            </>
+                          )}
+                        </Button>
+                      ) : (
+                        <Button onClick={handleConnectGoogle} variant="outline">
+                          <GoogleIcon className="h-4 w-4 mr-2" />
+                          Reconnect
+                        </Button>
+                      )
+                    ) : (
+                      <Button onClick={handleConnectGoogle}>
+                        <GoogleIcon className="h-4 w-4 mr-2" />
+                        Connect Google Account
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                {isGoogleConnected ? (
-                  <Button variant="outline" disabled>
-                    Connected
-                  </Button>
-                ) : (
-                  <Button onClick={handleConnectGoogle}>
-                    <GoogleIcon className="h-4 w-4 mr-2" />
-                    Connect Google Account
-                  </Button>
+
+                {googleSyncStatus.connected && (
+                  <div className="border-t pt-4">
+                    <h5 className="font-medium text-sm mb-2">
+                      Sync Information
+                    </h5>
+                    <div className="text-xs text-slate-500 space-y-1">
+                      <p>• Tasks will be synced as calendar events</p>
+                      <p>
+                        • High priority tasks appear in red, Medium in orange,
+                        Low in green
+                      </p>
+                      <p>• Only pending and in-progress tasks are synced</p>
+                      <p>
+                        • Each task gets a 1-hour time slot based on its
+                        deadline
+                      </p>
+                    </div>
+                  </div>
                 )}
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

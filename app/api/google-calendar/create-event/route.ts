@@ -1,75 +1,92 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import { google } from "googleapis";
 
-export async function POST(request: Request) {
-  const supabase = createRouteHandlerClient({ cookies });
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // Ensure we have the Google provider token
-  if (
-    !session.provider_token ||
-    session.user.app_metadata.provider !== "google"
-  ) {
-    return NextResponse.json(
-      { error: "Google account not connected or provider token is missing." },
-      { status: 400 }
-    );
-  }
-
+export async function POST(request: NextRequest) {
   try {
-    const { title, description, deadline } = await request.json();
+    const supabase = createRouteHandlerClient({ cookies });
 
-    if (!title || !deadline) {
-      return NextResponse.json(
-        { error: "Title and deadline are required." },
-        { status: 400 }
-      );
+    // Get the authenticated user
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const oauth2Client = new google.auth.OAuth2();
-    oauth2Client.setCredentials({ access_token: session.provider_token });
+    const { title, description, deadline } = await request.json();
 
-    const calendar = google.calendar({ version: "v3", auth: oauth2Client });
+    // Check if user has Google provider token
+    const provider_token = session.provider_token;
+    const isGoogleProvider = session.user.app_metadata?.provider === "google";
 
-    const event = {
-      summary: title,
-      description: description || "Task from Ergosphere Todo",
-      start: {
-        dateTime: new Date(deadline).toISOString(),
-        timeZone: "UTC",
-      },
-      end: {
-        // Make the event 1 hour long by default
-        dateTime: new Date(
-          new Date(deadline).getTime() + 60 * 60 * 1000
-        ).toISOString(),
-        timeZone: "UTC",
-      },
-    };
+    if (!isGoogleProvider || !provider_token) {
+      // Don't fail the task creation, just skip calendar sync
+      return NextResponse.json({
+        success: false,
+        message: "Google Calendar not connected",
+      });
+    }
 
-    await calendar.events.insert({
-      calendarId: "primary",
-      requestBody: event,
-    });
+    try {
+      const deadlineDate = new Date(deadline);
+      const endDate = new Date(deadlineDate.getTime() + 60 * 60 * 1000); // 1 hour later
 
-    return NextResponse.json({ message: "Event created successfully." });
+      const eventData = {
+        summary: title,
+        description: description,
+        start: {
+          dateTime: deadlineDate.toISOString(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+        end: {
+          dateTime: endDate.toISOString(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+        source: {
+          title: "Smart Todo Dashboard",
+          url: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+        },
+      };
+
+      const response = await fetch(
+        "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${provider_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(eventData),
+        }
+      );
+
+      if (response.ok) {
+        const eventResult = await response.json();
+        return NextResponse.json({
+          success: true,
+          eventId: eventResult.id,
+          message: "Event created in Google Calendar",
+        });
+      } else {
+        const errorText = await response.text();
+        console.error("Failed to create calendar event:", errorText);
+        return NextResponse.json({
+          success: false,
+          message: "Failed to create calendar event",
+        });
+      }
+    } catch (error) {
+      console.error("Error creating calendar event:", error);
+      return NextResponse.json({
+        success: false,
+        message: "Error creating calendar event",
+      });
+    }
   } catch (error) {
-    console.error("Error creating Google Calendar event:", error);
+    console.error("Create event error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "An internal server error occurred.",
-      },
+      { error: "Failed to create calendar event" },
       { status: 500 }
     );
   }
