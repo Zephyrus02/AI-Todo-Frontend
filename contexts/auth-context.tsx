@@ -73,15 +73,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${location.origin}/auth/callback`,
-        scopes:
-          "openid email profile https://www.googleapis.com/auth/calendar.events",
-      },
-    });
-    return { error };
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
+          scopes:
+            "openid email profile https://www.googleapis.com/auth/calendar.events",
+        },
+      });
+      return { error };
+    } catch (error) {
+      console.error("Google sign-in error:", error);
+      return { error };
+    }
   };
 
   const signUp = async (email: string, password: string) => {

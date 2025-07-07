@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
+import GoogleIcon from "@/components/ui/google-icon";
 
 export default function SettingsPage() {
   const { user, updateProfile, signInWithGoogle } = useAuth();
@@ -362,6 +363,7 @@ export default function SettingsPage() {
                   </Button>
                 ) : (
                   <Button onClick={handleConnectGoogle}>
+                    <GoogleIcon className="h-4 w-4 mr-2" />
                     Connect Google Account
                   </Button>
                 )}

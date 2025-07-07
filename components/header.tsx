@@ -44,12 +44,17 @@ export default function Header() {
   };
 
   return (
-    <header className="bg-white border-b border-gray-200 px-6 py-4">
+    <header className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-lg border-b border-white/20 px-6 py-4 sticky top-0 z-50">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
-          <h1 className="text-xl font-semibold text-gray-900">
-            <Link href="/">Ergosphere Todo</Link>
-          </h1>
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-sm">T</span>
+            </div>
+            <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              <Link href="/">Todo Dashboard</Link>
+            </h1>
+          </div>
         </div>
 
         <div className="flex items-center space-x-4">
@@ -59,28 +64,44 @@ export default function Header() {
                 // Authenticated user menu
                 <>
                   <Link href="/add-task">
-                    <Button variant="outline" size="sm">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="bg-white/50 backdrop-blur-sm border-white/20 hover:bg-white/70"
+                    >
                       <Plus className="h-4 w-4 mr-2" />
                       Add Task
                     </Button>
                   </Link>
 
-                  <Button variant="ghost" size="sm">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="hover:bg-white/20"
+                  >
                     <Search className="h-4 w-4" />
                   </Button>
 
                   <Link href="/settings?tab=notifications">
-                    <Button variant="ghost" size="sm">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="hover:bg-white/20"
+                    >
                       <Bell className="h-4 w-4" />
                     </Button>
                   </Link>
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="p-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="p-1 hover:bg-white/20"
+                      >
                         <Avatar className="h-8 w-8">
                           <AvatarImage src={getAvatarUrl(user)} alt="Profile" />
-                          <AvatarFallback className="text-sm">
+                          <AvatarFallback className="text-sm bg-gradient-to-r from-blue-500 to-purple-500 text-white">
                             {getDisplayName(user)
                               ? getInitials(getDisplayName(user))
                               : "U"}
@@ -88,7 +109,10 @@ export default function Header() {
                         </Avatar>
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent
+                      align="end"
+                      className="bg-white/80 backdrop-blur-sm border-white/20"
+                    >
                       <div className="px-2 py-1.5 text-sm text-gray-700">
                         {user.email}
                       </div>
@@ -111,12 +135,18 @@ export default function Header() {
                 // Non-authenticated user options
                 <div className="flex items-center space-x-2">
                   <Link href="/login">
-                    <Button variant="ghost" size="sm">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="hover:bg-white/20"
+                    >
                       Sign In
                     </Button>
                   </Link>
                   <Link href="/signup">
-                    <Button size="sm">Get Started</Button>
+                    <Button className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white">
+                      Get Started
+                    </Button>
                   </Link>
                 </div>
               )}
